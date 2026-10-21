@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "xraymod",
+  "version": "${version}",
+  "name": "Xray Mod",
+  "description": "Xray + ESP. X - sozlamalar, Z - xray yoqish/o'chirish.",
+  "environment": "client",
+  "entrypoints": { "client": ["uz.xray.XrayMod"] },
+  "mixins": ["xraymod.mixins.json"],
+  "depends": { "fabricloader": ">=0.15.0", "minecraft": "~1.21.4", "java": ">=21", "fabric-api": "*" }
+}
