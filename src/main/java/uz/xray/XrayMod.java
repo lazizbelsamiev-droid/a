@@ -3,11 +3,11 @@ package uz.xray;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.ShaderProgramKeys;
 import org.joml.Matrix4f;
@@ -26,8 +26,8 @@ import java.util.List;
 
 public class XrayMod implements ClientModInitializer {
     private static KeyBinding openKey, toggleKey;
-    private static final int RADIUS = 20;
-    private static final int MAX_ESP = 2000;
+    private static final int RADIUS = 16;
+    private static final int MAX_ESP = 1500;
 
     private record Ore(BlockPos pos, float r, float g, float b) {}
     private static volatile List<Ore> ores = new ArrayList<>();
@@ -42,19 +42,33 @@ public class XrayMod implements ClientModInitializer {
                 new KeyBinding("Xray yoqish/o'chirish", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Z, "Xray"));
 
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
-            while (openKey.wasPressed()) mc.setScreen(new XrayScreen());
-            while (toggleKey.wasPressed()) toggle(mc);
-            if (mc.player == null || mc.world == null) return;
-            if (cfg.xray && ++tick % 20 == 0) {
-                mc.player.addStatusEffect(new StatusEffectInstance(
-                        StatusEffects.NIGHT_VISION, 1000, 0, false, false, false));
-                if (cfg.esp) scan(mc, cfg);
+            try {
+                while (openKey.wasPressed()) mc.setScreen(new XrayScreen());
+                while (toggleKey.wasPressed()) toggle(mc);
+                if (mc.player == null || mc.world == null) return;
+                if (cfg.xray) {
+                    tick++;
+                    if (tick % 40 == 0) {
+                        mc.player.addStatusEffect(new StatusEffectInstance(
+                                StatusEffects.NIGHT_VISION, 1000, 0, false, false, false));
+                        if (cfg.esp) scan(mc);
+                    }
+                }
+            } catch (Throwable t) {
+                ores = new ArrayList<>();
             }
+        });
+
+        // Serverdan chiqqanda hammasini tozalash
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            cfg.xray = false;
+            ores = new ArrayList<>();
         });
 
         WorldRenderEvents.LAST.register(ctx -> {
             List<Ore> list = ores;
             if (!cfg.xray || !cfg.esp || list.isEmpty()) return;
+            try {
             Vec3d cam = ctx.camera().getPos();
             MatrixStack m = new MatrixStack();
             m.multiplyPositionMatrix(ctx.positionMatrix());
@@ -70,6 +84,10 @@ public class XrayMod implements ClientModInitializer {
             BufferRenderer.drawWithGlobalProgram(buf.end());
             RenderSystem.enableDepthTest();
             RenderSystem.disableBlend();
+            } catch (Throwable t) {
+                ores = new ArrayList<>();
+                RenderSystem.enableDepthTest();
+            }
         });
 
         // Pastdagi to'rtburchak (HUD)
@@ -112,6 +130,7 @@ public class XrayMod implements ClientModInitializer {
     public static void toggle(MinecraftClient mc) {
         XrayConfig cfg = XrayConfig.get();
         cfg.xray = !cfg.xray;
+        XrayConfig.rebuildCache();
         if (!cfg.xray) {
             ores = new ArrayList<>();
             if (mc.player != null) mc.player.removeStatusEffect(StatusEffects.NIGHT_VISION);
@@ -124,7 +143,7 @@ public class XrayMod implements ClientModInitializer {
         if (mc.worldRenderer != null && mc.world != null) mc.worldRenderer.reload();
     }
 
-    private static void scan(MinecraftClient mc, XrayConfig cfg) {
+    private static void scan(MinecraftClient mc) {
         List<Ore> found = new ArrayList<>();
         BlockPos c = mc.player.getBlockPos();
         BlockPos.Mutable p = new BlockPos.Mutable();
@@ -132,9 +151,8 @@ public class XrayMod implements ClientModInitializer {
             for (int y = -RADIUS; y <= RADIUS; y++)
                 for (int z = -RADIUS; z <= RADIUS; z++) {
                     p.set(c.getX() + x, c.getY() + y, c.getZ() + z);
-                    BlockState st = mc.world.getBlockState(p);
-                    Block b = st.getBlock();
-                    if (!XrayConfig.isOre(b) || !cfg.visible(b)) continue;
+                    Block b = mc.world.getBlockState(p).getBlock();
+                    if (!XrayConfig.isEsp(b)) continue;
                     float[] col = color(XrayConfig.id(b));
                     found.add(new Ore(p.toImmutable(), col[0], col[1], col[2]));
                     if (found.size() >= MAX_ESP) { ores = found; return; }

@@ -27,6 +27,7 @@ public class XrayScreen extends Screen {
     protected void init() { rebuild(); }
 
     private void rebuild() {
+        XrayConfig.rebuildCache();
         clearChildren();
         int cx = width / 2;
         int left = cx - (COLS * (BW + 4)) / 2;
@@ -124,6 +125,7 @@ public class XrayScreen extends Screen {
     @Override
     public void removed() {
         cfg.save();
+        XrayConfig.rebuildCache();
         XrayMod.reloadWorld(MinecraftClient.getInstance());
     }
 }
